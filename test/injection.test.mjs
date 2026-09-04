@@ -9,6 +9,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import url from "node:url";
 import vm from "node:vm";
 
@@ -154,4 +155,60 @@ test("injection templates are syntactically valid JS for any helper name", () =>
       });
     }
   }
+});
+
+// ---- V3: /wham/usage upsell strip ----
+
+import { patchWhamUpsell, WHAM_CAPABILITY_TOKEN } from "../lib/patcher.mjs";
+
+const WHAM_SNIPPET = `var Q={};SP=nb(Q,({get:e,scope:t})=>{return{queryKey:[\`rate-limit-status\`],select:e=>e,queryFn:async()=>{try{let e=await AO.safeGet(\`/wham/usage\`,{additionalHeaders:{"OAI-App-Brand":EO.toLowerCase()}}),n=Tlr.safeParse(e),r=Alr.safeParse(e),o={...e,rate_limit_upsell:n.success?n.data.rate_limit_upsell:void 0};return{raw:e,o};}catch(err){return{err:String(err)};}}};});`;
+
+function makeAssetsDir(source) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wham-test-"));
+  fs.writeFileSync(path.join(dir, "app-test-abc.js"), source, "utf8");
+  return dir;
+}
+
+test("wham strip removes upsell fields at the queryFn", async () => {
+  const dir = makeAssetsDir(WHAM_SNIPPET);
+  const result = patchWhamUpsell(dir);
+  assert.equal(result, "applied");
+  const patched = fs.readFileSync(path.join(dir, "app-test-abc.js"), "utf8");
+  assert.equal(patched.includes(WHAM_CAPABILITY_TOKEN), true);
+
+  // Execute the patched queryFn with mocks: verify stripping + preserved fields.
+  const sandbox = {
+    nb: (_Q, factory) => factory({ get: () => null, scope: {} }),
+    AO: { safeGet: async () => ({
+      rate_limit_upsell: { rate_limit_reached_type: { type: "rate_limit_reached" } },
+      rate_limit_reached_type: { type: "rate_limit_reached" },
+      model_picker_upsell: { blocked_model_slug: "gpt-x" },
+      keep_me: "yes",
+    }) },
+    EO: "CODEX",
+    Tlr: { safeParse: (o) => ({ success: true, data: o }) },
+    Alr: { safeParse: (o) => ({ success: true, data: o }) },
+  };
+  vm.createContext(sandbox);
+  new vm.Script(patched).runInContext(sandbox);
+  const out = await sandbox.SP.queryFn();
+  assert.equal(out.raw.rate_limit_upsell, undefined);
+  assert.equal(out.raw.rate_limit_reached_type, undefined);
+  assert.equal(out.raw.model_picker_upsell, undefined);
+  assert.equal(out.raw.keep_me, "yes");
+  assert.equal(out.o.rate_limit_upsell, undefined);
+});
+
+test("wham strip is idempotent (already applied)", () => {
+  const dir = makeAssetsDir(WHAM_SNIPPET);
+  patchWhamUpsell(dir);
+  const patched = fs.readFileSync(path.join(dir, "app-test-abc.js"), "utf8");
+  assert.equal(patchWhamUpsell(dir), "already");
+  assert.equal(patched.includes(WHAM_CAPABILITY_TOKEN), true);
+});
+
+test("wham strip is absent-safe (no site -> 'absent', no changes)", () => {
+  const dir = makeAssetsDir("var unrelated = 1;");
+  assert.equal(patchWhamUpsell(dir), "absent");
+  assert.equal(fs.readFileSync(path.join(dir, "app-test-abc.js"), "utf8"), "var unrelated = 1;");
 });

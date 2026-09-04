@@ -47,15 +47,16 @@ app update or an injection change.
    The injection is generated from those captures via the `@IPC@` placeholder.
 3. **Post-patch validation counts are exact.** After patching:
    `desktop-model-providers.json` appears exactly 3 times (thread/start +
-   settings/update injections, prewarm) and the marker text exactly 2 times
-   (one comment per injection site). If you add an injection site, update
-   both counts deliberately.
-4. **Injection versioning.** The sendRequest injection comment embeds
-   `CAPABILITY_TOKEN` (currently `__codexDesktopRequestProviderRoutingV2`).
-   Changing the injected behavior requires a new version token — the
-   capability check and the in-place upgrade path key off it. Upgrades
-   replace the first marker region (sendRequest) via a non-greedy
-   `…\*/.*?\}catch\{\}` match.
+   settings/update injections, prewarm). The marker text appears once per
+   injection site (sendRequest + prewarmThreadStart + wham strip = 3); each
+   function validates its own contribution. If you add an injection site,
+   update the counts deliberately.
+4. **Injection versioning.** Each injection site carries a version token:
+   `CAPABILITY_TOKEN` (V2, sendRequest swaps) and `WHAM_CAPABILITY_TOKEN`
+   (V3, /wham/usage upsell strip). Capability checks and the in-place
+   upgrade path key off these tokens; upgrades replace the first marker
+   region (sendRequest) via a non-greedy `…\*/.*?\}catch\{\}` match and
+   apply the wham strip separately (best-effort).
 5. **The bundle is ESM.** Syntax checks must run `node --check`
    (`syntaxCheckBundle` uses `process.execPath`); `vm.Script` cannot parse
    `import` statements.
