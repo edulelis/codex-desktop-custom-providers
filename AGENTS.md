@@ -53,7 +53,7 @@ app update or an injection change.
    update the counts deliberately.
 4. **Injection versioning.** Each injection site carries a version token:
    `CAPABILITY_TOKEN` (V2, sendRequest swaps) and `WHAM_CAPABILITY_TOKEN`
-   (V3, /wham/usage upsell strip). Capability checks and the in-place
+   (V4, /wham/usage upsell strip). Capability checks and the in-place
    upgrade path key off these tokens; upgrades replace the first marker
    region (sendRequest) via a non-greedy `…\*/.*?\}catch\{\}` match and
    apply the wham strip separately (best-effort).

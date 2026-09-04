@@ -212,3 +212,19 @@ test("wham strip is absent-safe (no site -> 'absent', no changes)", () => {
   assert.equal(patchWhamUpsell(dir), "absent");
   assert.equal(fs.readFileSync(path.join(dir, "app-test-abc.js"), "utf8"), "var unrelated = 1;");
 });
+
+test("wham strip upgrades an older V3 strip in place", () => {
+  const oldStrip = WHAM_SNIPPET.replace(
+    "EO.toLowerCase()}}),n=Tlr.safeParse(e)",
+    "EO.toLowerCase()}});/*__codexDesktopRequestProviderRoutingV3*/try{e={...e,rate_limit_upsell:void 0,rate_limit_reached_type:void 0,model_picker_upsell:void 0}}catch{};let n=Tlr.safeParse(e)"
+  );
+  assert.notEqual(oldStrip, WHAM_SNIPPET, "snippet must actually contain the old strip");
+  const dir = makeAssetsDir(oldStrip);
+  assert.equal(patchWhamUpsell(dir), "applied");
+  const patched = fs.readFileSync(path.join(dir, "app-test-abc.js"), "utf8");
+  assert.equal(patched.includes("__codexDesktopRequestProviderRoutingV3"), false);
+  assert.equal(patched.includes(WHAM_CAPABILITY_TOKEN), true);
+  assert.equal(patched.includes("rate_limit:void 0"), true);
+  assert.equal(patched.includes("rate_limit_reset_credits:void 0"), true);
+  new vm.Script(patched, { filename: "upgraded.js" }); // syntax stays valid
+});

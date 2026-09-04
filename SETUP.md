@@ -237,17 +237,19 @@ marker-patched but lacks the `V2` token, it rewrites the sendRequest
 injection region instead of refusing. No app reinstall is required between
 injection versions.
 
-## Usage upsell banner suppression (V3)
+## Usage upsell banner suppression (V4)
 
 The "You're out of Codex and Work usage" banner is fed by the ChatGPT-backend
-HTTP response `GET /wham/usage` (fields `rate_limit_upsell`,
-`model_picker_upsell`, top-level `rate_limit_reached_type`), parsed by the
-`['rate-limit-status']` react-query in `app-initial-*.js` — not by the
-app-server request path. Injection V3 therefore patches the queryFn itself:
-right after the `safeGet` call it voids those fields (structural anchor:
+HTTP response `GET /wham/usage`, parsed by the `['rate-limit-status']`
+react-query in `app-initial-*.js` — not by the app-server request path.
+Injection V4 therefore patches the queryFn itself: right after the `safeGet`
+call it voids `rate_limit_upsell`, `rate_limit_reached_type`,
+`model_picker_upsell`, `rate_limit` (the `limit_reached`/`allowed` gates) and
+`rate_limit_reset_credits` (the "use one of your rate limit resets" counter)
+(structural anchor:
 `` let <resp>=await <client>.safeGet(`/wham/usage`,{additionalHeaders:...}) ``
 captured with groups, exactly-once match per bundle), so the banner has no
 data and never renders. The strip is applied best-effort with its own
-capability token (`...V3`); older V1/V2 installs are upgraded in place, and a
+capability token (`...V4`); older V1/V2/V3 installs are upgraded in place, and a
 missing site only skips the strip (routing is unaffected). Workspace
 "out of credits" variants driven by `credits.has_credits` are not stripped.
