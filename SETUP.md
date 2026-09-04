@@ -183,3 +183,29 @@ keys out of `config.toml` and out of this repository entirely:
   instead of the token-plan key).
 - **Native models vanished from the picker** — the catalog file replaced the
   bundled one; re-merge (step 4).
+
+## 7. Mid-thread provider swapping (injection V2)
+
+The request-layer injection also intercepts `thread/settings/update` and
+`turn/settings/update` (injection version `V2`, token
+`__codexDesktopRequestProviderRoutingV2`). Whenever one of those requests
+changes the thread's `model` without an explicit `modelProvider`, the
+provider is resolved from `desktop-model-providers.json` exactly like at
+`thread/start`:
+
+- Custom slugs (`glm-5.3-flash`, `deepseek-v4-pro`, `MiniMax-M3`, ...) route
+  to their mapped provider.
+- Unmapped (native) slugs fall back to `default_provider` (`openai`), so
+  switching back to a GPT model returns the thread to the signed-in ChatGPT
+  account.
+
+Practical effect: in an existing conversation, pick a different model in the
+native picker — the provider swap applies from the **next turn** (the
+conversation history is provider-agnostic; only subsequent model calls use
+the new provider). No repatch is needed to change mappings; the routing file
+is re-read on every request.
+
+The installer upgrades older `V1` installs in place: when the app is already
+marker-patched but lacks the `V2` token, it rewrites the sendRequest
+injection region instead of refusing. No app reinstall is required between
+injection versions.

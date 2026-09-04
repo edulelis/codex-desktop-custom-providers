@@ -9,7 +9,10 @@ routes providers at thread creation using the project's existing
 
 The routing file is re-read for every new thread. Exact model slugs use
 model_providers; unmapped models use default_provider. Existing threads keep the
-provider they started with.
+provider they started with — except that this installer also intercepts
+thread/settings/update and turn/settings/update, so changing the model inside
+an existing thread swaps the provider for subsequent turns (custom slugs use
+their mapping; native slugs fall back to default_provider, e.g. openai).
 
 Unlike the build-7658 fallback (patch_chatgpt_provider_routing_26901.py), this
 installer does NOT hardcode minified identifier names. The request-layer
@@ -17,7 +20,8 @@ matcher captures the per-build minified names (IPC helper, timeout constant,
 prewarm source helper) structurally at patch time and generates the injection
 from those captures. Known-good builds: 26.901.20858 (7658) and
 26.901.22334 (7746). The installer stays fail-closed: it patches only when
-every expected structure matches exactly once.
+every expected structure matches exactly once, and it upgrades older marker-
+patched installs in place when the injection version changes.
 """
 
 from __future__ import annotations
@@ -58,6 +62,9 @@ except ModuleNotFoundError as exc:
 
 PATCH_MARKER = b"__codexDesktopRequestProviderRouting"
 MARKER_TEXT = "__codexDesktopRequestProviderRouting"
+# Injection version suffix; V2 adds thread/settings-update provider swaps.
+INJECTION_VERSION = "V2"
+CAPABILITY_TOKEN = MARKER_TEXT + INJECTION_VERSION
 ASAR_PACKAGE = "@electron/asar@3.4.1"
 
 DISPATCHER_GUARD = (
@@ -80,7 +87,7 @@ PREWARM_RE = re.compile(
 IPC_RE = re.compile(r"(\w+)\(`read-file`,\{params:\{hostId:")
 
 SEND_INJECT_TEMPLATE = (
-    "/*" + MARKER_TEXT + "*/"
+    "/*" + CAPABILITY_TOKEN + "*/"
     "e===`thread/list`&&(t==null||typeof t!==`object`?t={modelProviders:[]}:"
     "t.modelProviders==null&&(t={...t,modelProviders:[]}));"
     "if(e===`thread/start`&&t!=null&&typeof t===`object`&&t.modelProvider==null)try{"
@@ -90,6 +97,15 @@ SEND_INJECT_TEMPLATE = (
     "{contents:o}=await @IPC@(`read-file`,{params:{hostId:this.hostId,path:a}}),"
     "s=JSON.parse(o),c=s?.model_providers?.[t.model]??s?.default_provider;"
     "typeof c===`string`&&c.length>0&&(t={...t,modelProvider:c})"
+    "}catch{}"
+    "if((e===`thread/settings/update`||e===`turn/settings/update`)"
+    "&&t!=null&&typeof t===`object`&&t.model!=null&&t.modelProvider==null)try{"
+    "let{codexHome:n}=await @IPC@(`codex-home`,{params:{hostId:this.hostId}}),"
+    "d=n.includes(`\\\\`)&&!n.includes(`/`)?`\\\\`:`/`,"
+    "u=`${n.replace(/[\\\\/]+$/u,``)}${d}desktop-model-providers.json`,"
+    "{contents:l}=await @IPC@(`read-file`,{params:{hostId:this.hostId,path:u}}),"
+    "g=JSON.parse(l),h=g?.model_providers?.[t.model]??g?.default_provider;"
+    "typeof h===`string`&&h.length>0&&(t={...t,modelProvider:h})"
     "}catch{}"
 )
 
@@ -232,10 +248,50 @@ def patch_request_bundle(path: Path) -> None:
             f"{path.name} does not match the request layer "
             f"(sendRequest={send_count}, prewarmThreadStart={prewarm_count})"
         )
-    if patched.count("desktop-model-providers.json") < 2:
+    if patched.count("desktop-model-providers.json") != 3:
         raise PatchError("Provider-routing injection validation failed")
     if patched.count(MARKER_TEXT) != 2:
         raise PatchError("Provider-routing marker validation failed")
+    path.write_text(patched, encoding="utf-8")
+
+
+def find_patched_bundle(assets: Path) -> Path | None:
+    """Return the bundle containing this installer's marker, if any."""
+    for path in sorted(assets.glob("*.js")):
+        try:
+            if MARKER_TEXT in path.read_text(encoding="utf-8"):
+                return path
+        except UnicodeDecodeError:
+            continue
+    return None
+
+
+def upgrade_request_bundle(path: Path) -> None:
+    """Upgrade an older marker-patched bundle to the current injection.
+
+    Replaces the sendRequest injection region (marker comment through the
+    thread/start `}catch{}`) with the current template, which additionally
+    handles provider swaps via thread/settings/update and turn/settings/update.
+    The prewarm injection is unchanged between versions.
+    """
+    source = path.read_text(encoding="utf-8")
+    if CAPABILITY_TOKEN in source:
+        # Capabilities are already current; nothing to do.
+        raise PatchError(
+            f"{path.name} already contains the settings/update injection."
+        )
+    ipc_helper = resolve_ipc_helper(source)
+    new_injection = SEND_INJECT_TEMPLATE.replace("@IPC@", ipc_helper)
+    region_re = re.compile(re.escape("/*" + MARKER_TEXT) + r"\w*\*/.*?\}catch\{\}", re.DOTALL)
+    patched, n = region_re.subn(lambda _: new_injection, source, count=1)
+    if n != 1:
+        raise PatchError(
+            f"{path.name} marker injection region did not match exactly once."
+        )
+    if patched.count("desktop-model-providers.json") != 3:
+        raise PatchError("Provider-routing upgrade validation failed")
+    if patched.count(MARKER_TEXT) != 2:
+        raise PatchError("Provider-routing upgrade marker validation failed")
     path.write_text(patched, encoding="utf-8")
 
 
@@ -264,10 +320,6 @@ def patch_app(
     build = str(info.get("CFBundleVersion", "unknown"))
     print(f"[APP] ChatGPT/Codex {version} (build {build})")
 
-    if contains_marker(asar_path, PATCH_MARKER):
-        print("[OK] Request-layer provider routing is already installed.")
-        return None
-
     current_hash = asar_header_hash(asar_path)
     expected_hash = asar_integrity_hash(info)
     if current_hash != expected_hash:
@@ -291,15 +343,30 @@ def patch_app(
         if not assets.is_dir():
             raise PatchError("Extracted app has no webview/assets directory")
 
-        target, source = find_request_bundle(assets)
-        ipc_helper = resolve_ipc_helper(source)
-        print(f"[OK] Matched request bundle: {target.name}")
-        print(f"[OK] Captured per-build identifiers: ipc={ipc_helper}")
-        if dry_run:
-            print("[OK] Dry run passed. This app is compatible with the fallback patch.")
-            return None
-
-        patch_request_bundle(target)
+        patched_bundle = find_patched_bundle(assets)
+        if patched_bundle is not None:
+            previous = patched_bundle.read_text(encoding="utf-8")
+            if CAPABILITY_TOKEN in previous:
+                print(
+                    "[OK] Request-layer provider routing (with mid-thread "
+                    "provider swaps) is already installed."
+                )
+                return None
+            target = patched_bundle
+            print(f"[OK] Found existing provider-routing patch: {patched_bundle.name}")
+            if dry_run:
+                print("[OK] Dry run passed. This app can be upgraded in place.")
+                return None
+            upgrade_request_bundle(patched_bundle)
+        else:
+            target, source = find_request_bundle(assets)
+            ipc_helper = resolve_ipc_helper(source)
+            print(f"[OK] Matched request bundle: {target.name}")
+            print(f"[OK] Captured per-build identifiers: ipc={ipc_helper}")
+            if dry_run:
+                print("[OK] Dry run passed. This app is compatible with the fallback patch.")
+                return None
+            patch_request_bundle(target)
         run(
             ["node", "--check", str(target)],
             label="Syntax-checking the patched bundle",
