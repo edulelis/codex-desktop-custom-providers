@@ -1,8 +1,8 @@
 #!/bin/bash
 # patch-codex-app.sh — re-apply the request-layer provider-routing patch to ChatGPT.app.
 #
-# Fork: https://github.com/edulelis/Better-Codex-App-Custom-Provider-Support
-# Local clone: ~/Repositories/Better-Codex-App-Custom-Provider-Support
+# Fork: https://github.com/edulelis/codex-desktop-custom-providers
+# Local clone: ~/Repositories/codex-desktop-custom-providers
 #
 # Safe to run from inside the ChatGPT/Codex desktop app itself: the password is
 # requested first via the native macOS admin dialog, then the patch runs fully
@@ -18,7 +18,13 @@
 
 set -u
 
-REPO="$HOME/Repositories/Better-Codex-App-Custom-Provider-Support"
+# Locate the repo: prefer the checkout this script lives in, else the default clone.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$SCRIPT_DIR/patch_chatgpt_provider_routing.py" ]]; then
+  REPO="$SCRIPT_DIR"
+else
+  REPO="$HOME/Repositories/codex-desktop-custom-providers"
+fi
 INSTALLER="patch_chatgpt_provider_routing.py"
 APP="/Applications/ChatGPT.app"
 LOG_DIR="$HOME/.codex/logs"
