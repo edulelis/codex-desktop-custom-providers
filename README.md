@@ -179,3 +179,40 @@ Create and verify your own backups before running the script.
 ---
 
 _This is an unofficial modification and is not affiliated with or supported by OpenAI._
+
+---
+
+## Build-agnostic request-layer installer (this fork)
+
+`patch_chatgpt_provider_routing.py` is a variant of the build-7658 fallback
+that does **not** hardcode minified identifier names. It captures the
+per-build identifiers (IPC request helper, timeout constant, prewarm source
+helper) structurally at patch time and generates the injection from those
+captures, staying fail-closed: every structure must match exactly once.
+
+Keep both Python files in the same directory and run:
+
+```bash
+python3 patch_chatgpt_provider_routing.py            # patch
+python3 patch_chatgpt_provider_routing.py --dry-run  # compatibility check only
+```
+
+The request-layer routing still uses `~/.codex/desktop-model-providers.json`
+(`model_providers` slug map + `default_provider`). Because this installer is
+not tied to a single bundle hash, it keeps working across app builds as long
+as the request-layer code shape survives minifier renames.
+
+Known-good builds: `26.901.20858` (7658), `26.901.22334` (7746).
+
+If a future build is unsupported ("Expected exactly one request bundle, found
+0"), extract the new bundle and adapt the capture regexes (`SEND_RE`,
+`PREWARM_RE`, `IPC_RE`) in the installer.
+
+### macOS App Management note
+
+The app bundle is user-owned, but writing into a registered app bundle can
+fail with `EPERM` (macOS App Management / provenance protection). If the
+installer reports `Permission denied` for a non-root account, run it elevated
+(`sudo python3 patch_chatgpt_provider_routing.py`, or via
+`osascript ... with administrator privileges`). Root writes bypass this
+protection; the patcher chowns created backups back to the invoking user.
