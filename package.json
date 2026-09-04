@@ -1,0 +1,21 @@
+{
+  "name": "codex-desktop-custom-providers",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Build-agnostic request-layer provider routing for the ChatGPT/Codex macOS desktop app",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "patch": "node patch_chatgpt_provider_routing.mjs",
+    "patch:dry": "node patch_chatgpt_provider_routing.mjs --dry-run",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@electron/asar": "^3.4.1",
+    "bplist-creator": "^0.1.1",
+    "bplist-parser": "^0.3.2",
+    "plist": "^3.1.0"
+  }
+}

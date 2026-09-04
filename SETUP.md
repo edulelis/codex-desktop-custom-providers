@@ -22,9 +22,12 @@ environment-variable name only.
 
 ## 1. Patch the app
 
+Requires Node >= 18 and a one-time `npm install` in the repository.
+
 ```bash
-python3 patch_chatgpt_provider_routing.py --dry-run  # compatibility check
-python3 patch_chatgpt_provider_routing.py            # patch (backup + auto-recovery)
+npm run patch:dry   # compatibility check
+npm run patch       # patch (backup + auto-recovery) — needs elevation
+npm test            # behavioral tests of the injection (no elevation)
 ```
 
 Or use the bundled wrapper, which asks for the admin password via the native
@@ -32,9 +35,15 @@ macOS dialog, detaches if run from inside the app itself, patches elevated,
 and reopens the app:
 
 ```bash
-./patch-codex-app.sh          # pull fork, patch, reopen
+./patch-codex-app.sh          # pull fork, install deps, patch, reopen
 ./patch-codex-app.sh --check  # dry-run only
 ```
+
+> **No elevation is needed** for day-to-day work: editing
+> `desktop-model-providers.json`, the model catalog, `config.toml`, running
+> tests, or dry-runs all work as the normal user. The admin password is only
+> required when the installer must write into `/Applications/ChatGPT.app`
+> (i.e. after an app update or an injection change).
 
 > **Why elevation?** The bundle is user-owned, but writes into a registered
 > app bundle are blocked by macOS App Management (TCC) with `EPERM` — even for

@@ -37,18 +37,17 @@ This project currently supports **macOS only**.
 <br>
 <br>
 
-1. Click on the `patch_chatgpt_providers.py` file in the repository.
-2. Open the menu in the top-right.
-3. Click on **Download**.
-4. Run the downloaded script:
+**This fork ships a Node installer** (the upstream Python instructions no longer apply here):
 
 ```bash
-python3 patch_chatgpt_providers.py
+npm install
+npm run patch:dry   # compatibility check
+npm run patch       # patch (backup + auto-recovery) — needs elevation
 ```
 
 The installer closes processes belonging to the target app, creates a complete backup, patches `app.asar`, updates Electron's ASAR integrity metadata, and applies an ad-hoc signature.
 
-Run `python3 patch_chatgpt_providers.py --help` to see alternate app, config, and backup paths.
+Run `node patch_chatgpt_provider_routing.mjs --help` to see alternate app, config, and backup paths.
 
 ## Configure a custom provider
 
@@ -184,18 +183,23 @@ _This is an unofficial modification and is not affiliated with or supported by O
 
 ## Build-agnostic request-layer installer (this fork)
 
-`patch_chatgpt_provider_routing.py` is a variant of the build-7658 fallback
-that does **not** hardcode minified identifier names. It captures the
+**Node.js port** (no Python required): `patch_chatgpt_provider_routing.mjs`
+is a variant of the build-7658 fallback that does **not** hardcode minified
+identifier names. It captures the
 per-build identifiers (IPC request helper, timeout constant, prewarm source
 helper) structurally at patch time and generates the injection from those
 captures, staying fail-closed: every structure must match exactly once.
 
-Keep both Python files in the same directory and run:
+Install dependencies once (`npm install`, Node >= 18) and run:
 
 ```bash
-python3 patch_chatgpt_provider_routing.py            # patch
-python3 patch_chatgpt_provider_routing.py --dry-run  # compatibility check only
+npm run patch:dry        # compatibility check only
+npm run patch            # patch (needs admin/sudo — see App Management note)
+npm test                 # behavioral tests of the injection (no elevation)
 ```
+
+The library lives in `lib/patcher.mjs`; the CLI entry is
+`patch_chatgpt_provider_routing.mjs`; tests are in `test/`.
 
 The request-layer routing still uses `~/.codex/desktop-model-providers.json`
 (`model_providers` slug map + `default_provider`). Because this installer is
@@ -206,14 +210,14 @@ Known-good builds: `26.901.20858` (7658), `26.901.22334` (7746).
 
 If a future build is unsupported ("Expected exactly one request bundle, found
 0"), extract the new bundle and adapt the capture regexes (`SEND_RE`,
-`PREWARM_RE`, `IPC_RE`) in the installer.
+`PREWARM_RE`, `IPC_RE`) in `lib/patcher.mjs`.
 
 ### macOS App Management note
 
 The app bundle is user-owned, but writing into a registered app bundle can
 fail with `EPERM` (macOS App Management / provenance protection). If the
 installer reports `Permission denied` for a non-root account, run it elevated
-(`sudo python3 patch_chatgpt_provider_routing.py`, or via
+(`sudo node patch_chatgpt_provider_routing.mjs`, or via
 `osascript ... with administrator privileges`). Root writes bypass this
 protection; the patcher chowns created backups back to the invoking user.
 

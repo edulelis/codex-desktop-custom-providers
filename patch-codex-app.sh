@@ -25,11 +25,10 @@ if [[ -f "$SCRIPT_DIR/patch_chatgpt_provider_routing.py" ]]; then
 else
   REPO="$HOME/Repositories/codex-desktop-custom-providers"
 fi
-INSTALLER="patch_chatgpt_provider_routing.py"
+INSTALLER="patch_chatgpt_provider_routing.mjs"
 APP="/Applications/ChatGPT.app"
 LOG_DIR="$HOME/.codex/logs"
 LOG="$LOG_DIR/patch-codex-app.log"
-PYTHON="${PYTHON:-/opt/homebrew/bin/python3}"
 # Node for npx: prefer nvm's current version, fall back to npx on PATH.
 NODE_BIN=""
 if [[ -d "$HOME/.nvm/versions/node" ]]; then
@@ -89,6 +88,12 @@ if [[ $CHECK -eq 0 && $NO_PULL -eq 0 ]]; then
   fi
 fi
 
+# ---------- dependencies ----------
+if [[ ! -d "$REPO/node_modules" ]]; then
+  log "installing node dependencies (npm install)"
+  (cd "$REPO" && npm install --no-audit --no-fund >>"$LOG" 2>&1) || log "WARN: npm install failed"
+fi
+
 # ---------- inner phase: kill -> elevated patch -> reopen ----------
 inner_phase() {
   log "inner phase started (pid $$, detached from caller)"
@@ -99,7 +104,7 @@ inner_phase() {
   # the registered app bundle. The patcher stops app processes itself.
   local result
   result=$(osascript <<EOF 2>>"$LOG"
-set shCmd to "export HOME=$HOME CODEX_HOME=$HOME/.codex PATH=$NODE_BIN:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin; $PYTHON '$REPO/$INSTALLER' 2>&1; rc=\$?; chown -R $(id -u):$(id -g) '$BACKUP_DIR' 2>/dev/null; exit \$rc"
+set shCmd to "export HOME=$HOME CODEX_HOME=$HOME/.codex PATH=$NODE_BIN:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin; node '$REPO/$INSTALLER' 2>&1; rc=\$?; chown -R $(id -u):$(id -g) '$BACKUP_DIR' 2>/dev/null; exit \$rc"
 try
     do shell script shCmd with administrator privileges with prompt "Patch ChatGPT.app with custom provider routing?"
     return "PATCH-OK"
@@ -128,7 +133,7 @@ EOF
 if [[ $CHECK -eq 1 ]]; then
   export HOME CODEX_HOME="$HOME/.codex" PATH="$NODE_BIN:/opt/homebrew/bin:/usr/bin:/bin"
   log "dry-run requested"
-  "$PYTHON" "$REPO/$INSTALLER" --dry-run 2>&1 | tee -a "$LOG"
+  node "$REPO/$INSTALLER" --dry-run 2>&1 | tee -a "$LOG"
   exit $?
 fi
 
