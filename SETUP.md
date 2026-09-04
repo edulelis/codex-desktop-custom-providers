@@ -221,6 +221,13 @@ conversation history is provider-agnostic; only subsequent model calls use
 the new provider). No repatch is needed to change mappings; the routing file
 is re-read on every request.
 
+**Permission-picker independence.** The injection only adds
+`modelProvider` to payloads that change the model (guard: `t.model != null`).
+Permission-picker changes are sent as `thread/settings/update` payloads with
+`sandboxPolicy` / `activePermissionProfile` and no `model` field, so they
+always pass through untouched — the picker applies identically to custom and
+native models, and provider swaps never alter a thread's permission state.
+
 The installer upgrades older `V1` installs in place: when the app is already
 marker-patched but lacks the `V2` token, it rewrites the sendRequest
 injection region instead of refusing. No app reinstall is required between
