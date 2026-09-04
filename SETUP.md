@@ -30,6 +30,10 @@ npm run patch       # patch (backup + auto-recovery) — needs elevation
 npm test            # behavioral tests of the injection (no elevation)
 ```
 
+`npm test` also includes a live hash-parity check against the installed app
+(ASAR header hash vs `Info.plist` integrity metadata); it skips automatically
+when the app bundle is not present.
+
 Or use the bundled wrapper, which asks for the admin password via the native
 macOS dialog, detaches if run from inside the app itself, patches elevated,
 and reopens the app:
@@ -232,3 +236,13 @@ The installer upgrades older `V1` installs in place: when the app is already
 marker-patched but lacks the `V2` token, it rewrites the sendRequest
 injection region instead of refusing. No app reinstall is required between
 injection versions.
+
+## Known open item — usage upsell banner (V3, designed not built)
+
+The "You're out of Codex and Work usage" banner is fed by the ChatGPT-backend
+HTTP response `GET /wham/usage` (fields `rate_limit_upsell`,
+`model_picker_upsell`), parsed by the `['rate-limit-status']` react-query in
+`app-initial-*.js` — not by the app-server request path the injection wraps.
+Suppressing it requires a V3 injection that strips those fields at the
+queryFn (structural anchor: `` safeGet(`/wham/usage` ``), exactly-once
+matching as usual, new capability token). Not implemented yet.
