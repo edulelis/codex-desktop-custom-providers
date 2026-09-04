@@ -65,7 +65,11 @@ app update or an injection change.
 7. **Plist safety.** `savePlist` re-parses the serialized bytes and
    `deepEqual`s them against the in-memory object before writing; keep that
    check. `Info.plist` format (binary vs XML) is preserved.
-8. **Recovery is part of the contract.** Any failure after the first file
+8. **Model catalog entries for custom providers must not set `tool_mode`.**
+   `code_mode_only` (copied from native GPT entries) strips shell/terminal
+   tools from agents; omit the field so the standard `shell_type` tools are
+   provided.
+9.  Any failure after the first file
    mutation must restore the backup and surface the failed-copy path
    (`restoreBackup`). Never leave a half-patched app behind.
 

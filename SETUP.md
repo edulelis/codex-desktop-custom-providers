@@ -149,6 +149,13 @@ priorities, e.g.:
 16 MiniMax M3
 ```
 
+**Never set `tool_mode` on custom model entries.** Copying a native GPT
+entry brings `"tool_mode": "code_mode_only"` along, which restricts the
+agent to JS-REPL (code mode) tools — no shell/terminal. Native GPT models are
+trained for code mode; custom-provider agents are not, and end up with no
+usable tools. Omit the field (absent/null = standard shell + apply_patch
+tools per the entry's `shell_type`).
+
 Entries with `visibility: "hide"` (Daybreak variants, `codex-auto-review`)
 stay functional for app internals but never appear in the picker.
 
