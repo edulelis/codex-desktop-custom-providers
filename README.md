@@ -216,3 +216,19 @@ installer reports `Permission denied` for a non-root account, run it elevated
 (`sudo python3 patch_chatgpt_provider_routing.py`, or via
 `osascript ... with administrator privileges`). Root writes bypass this
 protection; the patcher chowns created backups back to the invoking user.
+
+## One-off wrapper + full setup guide
+
+`patch-codex-app.sh` is a one-off wrapper that asks for the admin password via
+the native macOS dialog, detaches when run from inside the app itself (kills
+the app, patches elevated, reopens), and can refresh this fork first:
+
+```bash
+./patch-codex-app.sh            # pull, patch, reopen
+./patch-codex-app.sh --check    # dry-run only
+```
+
+A complete, key-free example configuration (providers, routing JSON, model
+catalog merging and sorting, env-based key injection for GUI apps, MiniMax
+token-plan specifics, troubleshooting) is documented in
+[SETUP.md](SETUP.md).
