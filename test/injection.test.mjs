@@ -332,3 +332,74 @@ test("thread/fork without picks inherits nothing", async () => {
   assert.equal("model" in fork.payload, false);
   assert.equal("modelProvider" in fork.payload, false);
 });
+
+// ---- live channel: config flags + diagnostics ----
+
+test("feature kill-switch disables a block via live config", async () => {
+  const source = `
+    async function sendRequest(e, t, n) {
+      if (this.dispatchMessage == null) throw Error('no dispatcher');
+      ${SEND_INJECT_TEMPLATE}
+      return { method: e, payload: t };
+    }
+  `;
+  const sandbox = {
+    btoa: (s) => Buffer.from(s, "utf8").toString("base64"),
+    ED: async (method, opts) => {
+      if (method === "codex-home") return { codexHome: "/tmp/fakehome" };
+      if (method === "read-file") {
+        const p = opts?.params?.path ?? "";
+        if (p.endsWith("provider-routing-live.json"))
+          return { contents: JSON.stringify({ debug: false, features: { startRouting: false } }) };
+        if (p.endsWith("desktop-model-providers.json"))
+          return { contents: JSON.stringify(ROUTING) };
+      }
+      if (method === "fs/writeFile") return {};
+      throw new Error(`unexpected IPC method: ${method}`);
+    },
+  };
+  vm.createContext(sandbox);
+  new vm.Script(source).runInContext(sandbox);
+  const ctx = { dispatchMessage: {}, hostId: "local" };
+  const result = await sandbox.sendRequest.call(ctx, "thread/start", { model: "glm-5.3-flash" });
+  assert.equal("modelProvider" in result.payload, false, "startRouting:false must disable routing");
+});
+
+test("debug writes diag events to the events log", async () => {
+  const source = `
+    async function sendRequest(e, t, n) {
+      if (this.dispatchMessage == null) throw Error('no dispatcher');
+      ${SEND_INJECT_TEMPLATE}
+      return { method: e, payload: t };
+    }
+  `;
+  let written = null;
+  const sandbox = {
+    btoa: (s) => Buffer.from(s, "utf8").toString("base64"),
+    ED: async (method, opts) => {
+      if (method === "codex-home") return { codexHome: "/tmp/fakehome" };
+      if (method === "read-file") {
+        const p = opts?.params?.path ?? "";
+        if (p.endsWith("provider-routing-live.json"))
+          return { contents: JSON.stringify({ debug: true, features: {} }) };
+        if (p.endsWith("provider-routing-events.log"))
+          return { contents: written ?? "" };
+        if (p.endsWith("desktop-model-providers.json"))
+          return { contents: JSON.stringify(ROUTING) };
+      }
+      if (method === "fs/writeFile") {
+        if ((opts?.params?.path ?? "").endsWith("provider-routing-events.log"))
+          written = Buffer.from(opts.params.dataBase64, "base64").toString("utf8");
+        return {};
+      }
+      throw new Error(`unexpected IPC method: ${method}`);
+    },
+  };
+  vm.createContext(sandbox);
+  new vm.Script(source).runInContext(sandbox);
+  const ctx = { dispatchMessage: {}, hostId: "local" };
+  await sandbox.sendRequest.call(ctx, "thread/start", { model: "glm-5.3-flash" });
+  await new Promise((r) => setTimeout(r, 10));
+  assert.notEqual(written, null, "events log must be written when debug on");
+  assert.ok(written.includes('"ev":"req"'));
+});
