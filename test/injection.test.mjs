@@ -283,10 +283,11 @@ test("V5 strip keeps usage windows while voiding banner gates", async () => {
   assert.equal(out.raw.keep_me, "yes");
 });
 
-test("settings/update remembers the picked provider per thread", async () => {
+test("settings/update remembers the picked provider and model per thread", async () => {
   const runner = makeRunner();
   await runner.send("thread/settings/update", { threadId: "t1", model: "glm-5.3-flash" });
   assert.equal(runner.ctx.__codexProvStash?.t1, "openrouter");
+  assert.equal(runner.ctx.__codexProvModelStash?.t1, "glm-5.3-flash");
   await runner.send("thread/settings/update", { threadId: "t1", model: "gpt-5.6-terra" });
   assert.equal(runner.ctx.__codexProvStash?.t1, "openai");
   await runner.send("thread/settings/update", { threadId: "t2", model: "MiniMax-M3" });
@@ -305,4 +306,29 @@ test("thread/resume without a remembered provider is untouched", async () => {
   const runner = makeRunner();
   const result = await runner.send("thread/resume", { threadId: "t9", modelProvider: "minimax" });
   assert.equal(result.payload.modelProvider, "minimax");
+});
+
+test("thread/fork inherits the last picked model and routes its provider", async () => {
+  const runner = makeRunner();
+  await runner.send("thread/settings/update", { threadId: "t1", model: "MiniMax-M2.7-highspeed" });
+  await runner.send("thread/settings/update", { threadId: "t1", model: "glm-5.3-flash" });
+  const forked = await runner.send("thread/fork", { threadId: "t1" });
+});
+
+test("thread/fork carries picked model + resolved provider (real check)", async () => {
+  const runner = makeRunner();
+  await runner.send("thread/settings/update", { threadId: "t1", model: "glm-5.3-flash" });
+  const fork = await runner.send("thread/fork", { threadId: "t1" });
+  assert.equal(fork.payload.model, "glm-5.3-flash");
+  assert.equal(fork.payload.modelProvider, "openrouter");
+  // stash is sticky: forking again stays consistent
+  const again = await runner.send("thread/fork", { threadId: "t1" });
+  assert.equal(again.payload.modelProvider, "openrouter");
+});
+
+test("thread/fork without picks inherits nothing", async () => {
+  const runner = makeRunner();
+  const fork = await runner.send("thread/fork", { threadId: "tX" });
+  assert.equal("model" in fork.payload, false);
+  assert.equal("modelProvider" in fork.payload, false);
 });

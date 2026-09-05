@@ -229,16 +229,26 @@ The injection therefore routes `thread/start`, prewarmed starts, and
   pick the target model, fork — the fork carries the full history and the
   injection resolves its provider.
 
-**Provider rebind on reopen (V4).** When you pick a model in a thread, the
-injection remembers the resolved provider for that thread. When the
-conversation is re-resumed (switch to another chat and back), the injection
-overrides the app's stale `modelProvider` on `thread/resume` with the
-remembered one; the core rebuilds an idle, unsubscribed thread from resume
-overrides, so the conversation continues on the new provider with full
-history. Cross-provider flow: **pick model -> switch to another conversation
--> switch back -> send your message.** The stash lives in webview memory (an
-app restart clears pending rebinds; the thread keeps its old provider until
-re-picked + reopened).
+**Cross-provider move = pick the model, then Fork (V6).** Picking a model in
+a thread remembers the model + its routed provider. The app's native
+**Fork chat** action then carries that model (and provider) into the forked
+thread — which carries the full history and is opened natively by the app
+(unlike request-layer tricks, the UI navigation is the app's own fork flow).
+This works even from a thread whose stored state is inconsistent (e.g.
+model=glm, provider=minimax): pick the target model, then Fork.
+
+There is no way to rebind the provider of the *same* thread in place: the
+core only honors provider overrides on cold resume of an evicted thread and
+ignores them for loaded threads (thread_processor.rs), while
+settings/update / turn/start have no `modelProvider` field at all. An
+experimental resume-rebind (V4, in-memory stash) remains for the
+app-restart-reopen case only.
+
+**Zero-patch fallback** (huge history, or to preview before forking): with
+the thread back on a provider-consistent model, compact (native action) or
+ask the model for a summary, then start a new thread on the target model and
+paste it. Fork already carries full history, so this is only needed when the
+history would overflow the target model's context window.
 
 An earlier injection version (V2) also added `modelProvider` to
 settings/update payloads; the core ignored it, so it was removed (upgrades

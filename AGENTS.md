@@ -81,11 +81,15 @@ app update or an injection change.
   `default_provider`) for new threads.
 - `thread/fork` routing: resolves the provider for the forked thread when it
   carries a `model`.
-- Provider rebind (V4): `thread/settings/update` with a `model` stashes the
-  resolved provider per thread (`this.__codexProvStash`); `thread/resume`
-  overrides the app's stale `modelProvider` with the stashed value, which the
-  core honors by rebuilding idle, unsubscribed threads from resume overrides.
-  Never add `modelProvider` to settings/update itself — the protocol drops it.
+- Fork model inheritance (V6): the settings/update stash records the picked
+  model (`__codexProvModelStash`) plus its provider (`__codexProvStash`);
+  `thread/fork` without an explicit model inherits the stashed one and gets
+  its provider routed, so the native Fork action moves a conversation across
+  providers with the app's own navigation. `thread/resume` also overrides a
+  stale `modelProvider` from the stash (cold-resume rebuild case only — the
+  core ignores resume overrides for loaded, subscribed threads). Capability
+  tokens must stay distinct between injection sites (a shared "V5" suffix
+  made the installer no-op once).
 - `thread/list`: injects an empty `modelProviders` filter so threads from all
   providers stay visible.
 - The routing file is re-read on every request; editing it never requires a
