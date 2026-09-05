@@ -79,10 +79,13 @@ app update or an injection change.
 - `thread/start` and `prewarmThreadStart`: resolve `modelProvider` from
   `~/.codex/desktop-model-providers.json` (`model_providers[slug]` else
   `default_provider`) for new threads.
-- `thread/fork` (injection V3): resolves the provider for the forked thread
-  from the routing file when it carries a `model` — the sanctioned way to
-  move a conversation across providers (settings/update has no
-  `modelProvider` field server-side; never re-add that interception).
+- `thread/fork` routing: resolves the provider for the forked thread when it
+  carries a `model`.
+- Provider rebind (V4): `thread/settings/update` with a `model` stashes the
+  resolved provider per thread (`this.__codexProvStash`); `thread/resume`
+  overrides the app's stale `modelProvider` with the stashed value, which the
+  core honors by rebuilding idle, unsubscribed threads from resume overrides.
+  Never add `modelProvider` to settings/update itself — the protocol drops it.
 - `thread/list`: injects an empty `modelProviders` filter so threads from all
   providers stay visible.
 - The routing file is re-read on every request; editing it never requires a

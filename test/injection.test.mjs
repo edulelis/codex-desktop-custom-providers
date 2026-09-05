@@ -75,6 +75,7 @@ function makeRunner({ ipcFails = false } = {}) {
   return {
     send: (method, payload) => sandbox.sendRequest.call(ctx, method, payload),
     prewarm: (payload) => sandbox.prewarmThreadStart.call(ctx, payload),
+    ctx,
   };
 }
 
@@ -280,4 +281,28 @@ test("V5 strip keeps usage windows while voiding banner gates", async () => {
   assert.equal(out.raw.rate_limit.secondary_window.used_percent, 42);
   assert.equal(out.raw.rate_limit_reset_credits.available_count, 3);
   assert.equal(out.raw.keep_me, "yes");
+});
+
+test("settings/update remembers the picked provider per thread", async () => {
+  const runner = makeRunner();
+  await runner.send("thread/settings/update", { threadId: "t1", model: "glm-5.3-flash" });
+  assert.equal(runner.ctx.__codexProvStash?.t1, "openrouter");
+  await runner.send("thread/settings/update", { threadId: "t1", model: "gpt-5.6-terra" });
+  assert.equal(runner.ctx.__codexProvStash?.t1, "openai");
+  await runner.send("thread/settings/update", { threadId: "t2", model: "MiniMax-M3" });
+  assert.equal(runner.ctx.__codexProvStash?.t2, "minimax");
+});
+
+test("thread/resume rebinds the remembered provider and clears the stash", async () => {
+  const runner = makeRunner();
+  await runner.send("thread/settings/update", { threadId: "t1", model: "glm-5.3-flash" });
+  const resumed = await runner.send("thread/resume", { threadId: "t1", modelProvider: "minimax" });
+  assert.equal(resumed.payload.modelProvider, "openrouter");
+  assert.equal(runner.ctx.__codexProvStash?.t1, undefined);
+});
+
+test("thread/resume without a remembered provider is untouched", async () => {
+  const runner = makeRunner();
+  const result = await runner.send("thread/resume", { threadId: "t9", modelProvider: "minimax" });
+  assert.equal(result.payload.modelProvider, "minimax");
 });

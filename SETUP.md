@@ -229,6 +229,17 @@ The injection therefore routes `thread/start`, prewarmed starts, and
   pick the target model, fork — the fork carries the full history and the
   injection resolves its provider.
 
+**Provider rebind on reopen (V4).** When you pick a model in a thread, the
+injection remembers the resolved provider for that thread. When the
+conversation is re-resumed (switch to another chat and back), the injection
+overrides the app's stale `modelProvider` on `thread/resume` with the
+remembered one; the core rebuilds an idle, unsubscribed thread from resume
+overrides, so the conversation continues on the new provider with full
+history. Cross-provider flow: **pick model -> switch to another conversation
+-> switch back -> send your message.** The stash lives in webview memory (an
+app restart clears pending rebinds; the thread keeps its old provider until
+re-picked + reopened).
+
 An earlier injection version (V2) also added `modelProvider` to
 settings/update payloads; the core ignored it, so it was removed (upgrades
 strip the dead block in place).
