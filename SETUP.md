@@ -270,3 +270,20 @@ data and never renders. The strip is applied best-effort with its own
 capability token (`...V4`); older V1/V2/V3 installs are upgraded in place, and a
 missing site only skips the strip (routing is unaffected). Workspace
 "out of credits" variants driven by `credits.has_credits` are not stripped.
+
+## Live channel — runtime config + diagnostics (V8, no re-root needed)
+
+The patched app reads `~/.codex/provider-routing-live.json` before every
+routed request (30s cache, fail-open). Edit it to change behavior live —
+no repatch, no elevation:
+
+```json
+{ "debug": true, "features": { "startRouting": true, "forkRouting": true,
+  "stash": true, "resumeRebind": true, "whamStrip": true, "pickerRedirect": false } }
+```
+
+- `features.<name>: false` disables that injection site at runtime
+  (kill-switch — recovers the app without restoring backups).
+- `debug: true` makes the app append JSONL events (method, model, thread,
+  decisions, errors) to `~/.codex/provider-routing-events.log` — read that
+  file to diagnose routing behavior. Ring buffer caps at 2000 lines.

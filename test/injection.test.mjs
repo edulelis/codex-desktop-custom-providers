@@ -339,7 +339,7 @@ test("feature kill-switch disables a block via live config", async () => {
   const source = `
     async function sendRequest(e, t, n) {
       if (this.dispatchMessage == null) throw Error('no dispatcher');
-      ${SEND_INJECT_TEMPLATE}
+      ${SEND_INJECT_TEMPLATE.replaceAll("@IPC@", "ED")}
       return { method: e, payload: t };
     }
   `;
@@ -369,7 +369,7 @@ test("debug writes diag events to the events log", async () => {
   const source = `
     async function sendRequest(e, t, n) {
       if (this.dispatchMessage == null) throw Error('no dispatcher');
-      ${SEND_INJECT_TEMPLATE}
+      ${SEND_INJECT_TEMPLATE.replaceAll("@IPC@", "ED")}
       return { method: e, payload: t };
     }
   `;
