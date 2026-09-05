@@ -47,7 +47,7 @@ app update or an injection change.
    The injection is generated from those captures via the `@IPC@` placeholder.
 3. **Post-patch validation counts are exact.** After patching:
    `desktop-model-providers.json` appears exactly 3 times (thread/start +
-   settings/update injections, prewarm). The marker text appears once per
+   thread/fork injections, prewarm). The marker text appears once per
    injection site (sendRequest + prewarmThreadStart + wham strip = 3); each
    function validates its own contribution. If you add an injection site,
    update the counts deliberately.
@@ -79,10 +79,10 @@ app update or an injection change.
 - `thread/start` and `prewarmThreadStart`: resolve `modelProvider` from
   `~/.codex/desktop-model-providers.json` (`model_providers[slug]` else
   `default_provider`) for new threads.
-- `thread/settings/update` and `turn/settings/update` (injection V2): when
-  the payload changes `model` without an explicit `modelProvider`, resolve
-  the provider the same way — this is what makes mid-thread provider swaps
-  work. Native slugs fall back to `default_provider` (e.g. `openai`).
+- `thread/fork` (injection V3): resolves the provider for the forked thread
+  from the routing file when it carries a `model` — the sanctioned way to
+  move a conversation across providers (settings/update has no
+  `modelProvider` field server-side; never re-add that interception).
 - `thread/list`: injects an empty `modelProviders` filter so threads from all
   providers stay visible.
 - The routing file is re-read on every request; editing it never requires a

@@ -84,16 +84,32 @@ test("thread/start maps glm-5.3-flash to openrouter", async () => {
   assert.equal(result.payload.modelProvider, "openrouter");
 });
 
-test("thread/settings/update swaps back to the default provider for native models", async () => {
+test("settings/update is never provider-touched (protocol ignores modelProvider there)", async () => {
   const runner = makeRunner();
-  const result = await runner.send("thread/settings/update", { threadId: "t1", model: "gpt-5.6-terra" });
-  assert.equal(result.payload.modelProvider, "openai");
+  for (const model of ["gpt-5.6-terra", "glm-5.3"]) {
+    const result = await runner.send("thread/settings/update", { threadId: "t1", model });
+    assert.equal("modelProvider" in result.payload, false, `model=${model}`);
+  }
 });
 
-test("thread/settings/update swaps to the mapped provider for custom models", async () => {
+test("thread/fork resolves the provider from the routing file", async () => {
   const runner = makeRunner();
-  const result = await runner.send("thread/settings/update", { threadId: "t1", model: "glm-5.3" });
-  assert.equal(result.payload.modelProvider, "openrouter");
+  const custom = await runner.send("thread/fork", { threadId: "t1", model: "glm-5.3-flash" });
+  const native = await runner.send("thread/fork", { threadId: "t1", model: "gpt-5.6-terra" });
+  assert.equal(custom.payload.modelProvider, "openrouter");
+  assert.equal(native.payload.modelProvider, "openai");
+});
+
+test("thread/fork without a model inherits the source provider (untouched)", async () => {
+  const runner = makeRunner();
+  const result = await runner.send("thread/fork", { threadId: "t1" });
+  assert.equal("modelProvider" in result.payload, false);
+});
+
+test("turn/settings/update is never provider-touched", async () => {
+  const runner = makeRunner();
+  const result = await runner.send("turn/settings/update", { threadId: "t1", model: "MiniMax-M3" });
+  assert.equal("modelProvider" in result.payload, false);
 });
 
 test("settings update without a model is left untouched", async () => {
@@ -115,11 +131,7 @@ test("explicit modelProvider is preserved", async () => {
   assert.equal(result.payload.modelProvider, "custom-override");
 });
 
-test("turn/settings/update is also routed", async () => {
-  const runner = makeRunner();
-  const result = await runner.send("turn/settings/update", { threadId: "t1", model: "MiniMax-M3" });
-  assert.equal(result.payload.modelProvider, "minimax");
-});
+
 
 test("thread/list gets an empty modelProviders filter", async () => {
   const runner = makeRunner();
@@ -224,7 +236,48 @@ test("wham strip upgrades an older V3 strip in place", () => {
   const patched = fs.readFileSync(path.join(dir, "app-test-abc.js"), "utf8");
   assert.equal(patched.includes("__codexDesktopRequestProviderRoutingV3"), false);
   assert.equal(patched.includes(WHAM_CAPABILITY_TOKEN), true);
-  assert.equal(patched.includes("rate_limit:void 0"), true);
-  assert.equal(patched.includes("rate_limit_reset_credits:void 0"), true);
+  assert.equal(patched.includes("limit_reached:void 0"), true);
+  assert.equal(patched.includes("allowed:void 0"), true);
+  assert.equal(patched.includes("rate_limit:void 0"), false, "rate_limit object must be kept for usage details");
+  assert.equal(patched.includes("rate_limit_reset_credits:void 0"), false, "reset credits must be kept");
   new vm.Script(patched, { filename: "upgraded.js" }); // syntax stays valid
+});
+
+test("V5 strip keeps usage windows while voiding banner gates", async () => {
+  const dir = makeAssetsDir(WHAM_SNIPPET);
+  assert.equal(patchWhamUpsell(dir), "applied");
+  const patched = fs.readFileSync(path.join(dir, "app-test-abc.js"), "utf8");
+  const sandbox = {
+    nb: (_Q, factory) => factory({ get: () => null, scope: {} }),
+    AO: { safeGet: async () => ({
+      rate_limit_upsell: { banner_type: "plus" },
+      rate_limit_reached_type: { type: "rate_limit_reached" },
+      model_picker_upsell: { blocked_model_slug: "gpt-x" },
+      rate_limit: {
+        limit_reached: true,
+        allowed: false,
+        primary_window: { used_percent: 100, reset_at_iso: "2026-09-06" },
+        secondary_window: { used_percent: 42 },
+      },
+      rate_limit_reset_credits: { available_count: 3 },
+      keep_me: "yes",
+    }) },
+    EO: "CODEX",
+    Tlr: { safeParse: (o) => ({ success: true, data: o }) },
+    Alr: { safeParse: (o) => ({ success: true, data: o }) },
+  };
+  vm.createContext(sandbox);
+  new vm.Script(patched).runInContext(sandbox);
+  const out = await sandbox.SP.queryFn();
+  // banner gates neutralized
+  assert.equal(out.raw.rate_limit_upsell, undefined);
+  assert.equal(out.raw.rate_limit_reached_type, undefined);
+  assert.equal(out.raw.model_picker_upsell, undefined);
+  assert.equal(out.raw.rate_limit.limit_reached, undefined);
+  assert.equal(out.raw.rate_limit.allowed, undefined);
+  // usage-details data preserved
+  assert.equal(out.raw.rate_limit.primary_window.used_percent, 100);
+  assert.equal(out.raw.rate_limit.secondary_window.used_percent, 42);
+  assert.equal(out.raw.rate_limit_reset_credits.available_count, 3);
+  assert.equal(out.raw.keep_me, "yes");
 });

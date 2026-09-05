@@ -204,38 +204,34 @@ keys out of `config.toml` and out of this repository entirely:
 - **Native models vanished from the picker** — the catalog file replaced the
   bundled one; re-merge (step 4).
 
-## 7. Mid-thread provider swapping (injection V2)
+## Mid-thread model switches and provider binding (V3)
 
-The request-layer injection also intercepts `thread/settings/update` and
-`turn/settings/update` (injection version `V2`, token
-`__codexDesktopRequestProviderRoutingV2`). Whenever one of those requests
-changes the thread's `model` without an explicit `modelProvider`, the
-provider is resolved from `desktop-model-providers.json` exactly like at
-`thread/start`:
+Protocol reality (verified against the codex app-server protocol source):
 
-- Custom slugs (`glm-5.3-flash`, `deepseek-v4-pro`, `MiniMax-M3`, ...) route
-  to their mapped provider.
-- Unmapped (native) slugs fall back to `default_provider` (`openai`), so
-  switching back to a GPT model returns the thread to the signed-in ChatGPT
-  account.
+- `thread/start`, `thread/fork` and `thread/resume` accept `model` **and**
+  `modelProvider`.
+- `thread/settings/update` and `turn/start` accept `model` but have **no**
+  `modelProvider` field — serde silently drops unknown fields, so a provider
+  can only bind to a thread at creation time.
 
-Practical effect: in an existing conversation, pick a different model in the
-native picker — the provider swap applies from the **next turn** (the
-conversation history is provider-agnostic; only subsequent model calls use
-the new provider). No repatch is needed to change mappings; the routing file
-is re-read on every request.
+The injection therefore routes `thread/start`, prewarmed starts, and
+`thread/fork` from `desktop-model-providers.json` (exact slug map, else
+`default_provider`). Practical behavior:
 
-**Permission-picker independence.** The injection only adds
-`modelProvider` to payloads that change the model (guard: `t.model != null`).
-Permission-picker changes are sent as `thread/settings/update` payloads with
-`sandboxPolicy` / `activePermissionProfile` and no `model` field, so they
-always pass through untouched — the picker applies identically to custom and
-native models, and provider swaps never alter a thread's permission state.
+- New threads on custom models route correctly.
+- Switching models **within the same provider** mid-thread works with the
+  native picker (settings/update changes the model; the thread's provider
+  still serves the new slug).
+- Switching **across providers** mid-thread cannot work by protocol: the
+  thread's provider stays bound and the provider API rejects the foreign
+  slug (e.g. MiniMax error 2013 "unknown model"). The sanctioned way to move
+  a conversation to another provider is **fork** (or start a new thread):
+  pick the target model, fork — the fork carries the full history and the
+  injection resolves its provider.
 
-The installer upgrades older `V1` installs in place: when the app is already
-marker-patched but lacks the `V2` token, it rewrites the sendRequest
-injection region instead of refusing. No app reinstall is required between
-injection versions.
+An earlier injection version (V2) also added `modelProvider` to
+settings/update payloads; the core ignored it, so it was removed (upgrades
+strip the dead block in place).
 
 ## Usage upsell banner suppression (V4)
 
